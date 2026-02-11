@@ -154,6 +154,142 @@ TEST_F(geographyFunctionsTest, as_wktTest) {
     ASSERT_EQ("POINT (134 63)", v->get_data()[0].to_string());
 }
 
+TEST_F(geographyFunctionsTest, st_asgeojsonTest) {
+    GeoPoint point;
+    point.from_coord(134, 63);
+
+    std::string buf;
+    point.encode_to(&buf);
+
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    Columns columns;
+    auto str_point = BinaryColumn::create();
+    str_point->append(buf);
+    columns.emplace_back(std::move(str_point));
+
+    auto result = GeoFunctions::st_asgeojson(ctx.get(), columns).value();
+    auto v = ColumnHelper::as_column<BinaryColumn>(result);
+
+    ASSERT_EQ(R"({"type": "Point", "coordinates": [134, 63]})", v->get_data()[0].to_string());
+}
+
+TEST_F(geographyFunctionsTest, st_asgeojsonLineTest) {
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    Columns columns;
+
+    // Create a LineString from WKT
+    std::string line_wkt = "LINESTRING (10 20, 30 40, 50 60)";
+    auto wkt_column = BinaryColumn::create();
+    wkt_column->append(line_wkt);
+    columns.emplace_back(std::move(wkt_column));
+    ctx->set_constant_columns(columns);
+
+    GeoFunctions::st_line_prepare(ctx.get(), FunctionContext::FRAGMENT_LOCAL);
+    auto encoded_line = GeoFunctions::st_line(ctx.get(), columns).value();
+    GeoFunctions::st_from_wkt_close(ctx.get(), FunctionContext::FRAGMENT_LOCAL);
+
+    // Test st_asgeojson with the encoded line
+    columns.clear();
+    columns.emplace_back(std::move(encoded_line));
+    auto result = GeoFunctions::st_asgeojson(ctx.get(), columns).value();
+    auto v = ColumnHelper::as_column<BinaryColumn>(result);
+
+    // Verify the GeoJSON output contains expected elements
+    auto geojson_str = v->get_data()[0].to_string();
+    ASSERT_TRUE(geojson_str.find("\"type\": \"LineString\"") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("\"coordinates\"") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("[") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("]") != std::string::npos);
+}
+
+TEST_F(geographyFunctionsTest, st_asgeojsonPolygonTest) {
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    Columns columns;
+
+    // Create a Polygon from WKT
+    std::string polygon_wkt = "POLYGON ((10 10, 50 10, 50 50, 10 50, 10 10))";
+    auto wkt_column = BinaryColumn::create();
+    wkt_column->append(polygon_wkt);
+    columns.emplace_back(std::move(wkt_column));
+    ctx->set_constant_columns(columns);
+
+    GeoFunctions::st_polygon_prepare(ctx.get(), FunctionContext::FRAGMENT_LOCAL);
+    auto encoded_polygon = GeoFunctions::st_polygon(ctx.get(), columns).value();
+    GeoFunctions::st_from_wkt_close(ctx.get(), FunctionContext::FRAGMENT_LOCAL);
+
+    // Test st_asgeojson with the encoded polygon
+    columns.clear();
+    columns.emplace_back(std::move(encoded_polygon));
+    auto result = GeoFunctions::st_asgeojson(ctx.get(), columns).value();
+    auto v = ColumnHelper::as_column<BinaryColumn>(result);
+
+    // Verify the GeoJSON output contains expected elements
+    auto geojson_str = v->get_data()[0].to_string();
+    ASSERT_TRUE(geojson_str.find("\"type\": \"Polygon\"") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("\"coordinates\"") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("[[") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("]]") != std::string::npos);
+}
+
+TEST_F(geographyFunctionsTest, st_asgeojsonCircleTest) {
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    Columns columns;
+
+    // Create a Circle
+    auto lng_column = DoubleColumn::create();
+    lng_column->append(111);
+    auto lat_column = DoubleColumn::create();
+    lat_column->append(64);
+    auto radius_column = DoubleColumn::create();
+    radius_column->append(1000);
+    columns.emplace_back(std::move(lng_column));
+    columns.emplace_back(std::move(lat_column));
+    columns.emplace_back(std::move(radius_column));
+
+    ctx->set_constant_columns(columns);
+    GeoFunctions::st_circle_prepare(ctx.get(), FunctionContext::FRAGMENT_LOCAL);
+    auto encoded_circle = GeoFunctions::st_circle(ctx.get(), columns).value();
+    GeoFunctions::st_from_wkt_close(ctx.get(), FunctionContext::FRAGMENT_LOCAL);
+
+    // Test st_asgeojson with the encoded circle
+    columns.clear();
+    columns.emplace_back(std::move(encoded_circle));
+    auto result = GeoFunctions::st_asgeojson(ctx.get(), columns).value();
+    auto v = ColumnHelper::as_column<BinaryColumn>(result);
+
+    // Verify the GeoJSON output contains expected elements
+    auto geojson_str = v->get_data()[0].to_string();
+    ASSERT_TRUE(geojson_str.find("\"type\": \"Point\"") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("\"coordinates\"") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("\"radius\"") != std::string::npos);
+    ASSERT_TRUE(geojson_str.find("1000") != std::string::npos);
+}
+
+TEST_F(geographyFunctionsTest, st_asgeojsonNullTest) {
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    Columns columns;
+
+    // Test with null input
+    auto null_column = ColumnHelper::create_const_null_column(1);
+    columns.emplace_back(std::move(null_column));
+
+    auto result = GeoFunctions::st_asgeojson(ctx.get(), columns).value();
+    ASSERT_TRUE(result->is_null(0));
+}
+
+TEST_F(geographyFunctionsTest, st_asgeojsonInvalidInputTest) {
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    Columns columns;
+
+    // Test with invalid encoded data
+    auto invalid_column = BinaryColumn::create();
+    invalid_column->append("invalid_encoded_data");
+    columns.emplace_back(std::move(invalid_column));
+
+    auto result = GeoFunctions::st_asgeojson(ctx.get(), columns).value();
+    ASSERT_TRUE(result->is_null(0));
+}
+
 TEST_F(geographyFunctionsTest, st_from_wktGeneralTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     Columns columns;

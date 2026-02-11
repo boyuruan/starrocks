@@ -299,6 +299,31 @@ StatusOr<ColumnPtr> GeoFunctions::st_as_wkt(FunctionContext* context, const Colu
     return result.build(ColumnHelper::is_all_const(columns));
 }
 
+StatusOr<ColumnPtr> GeoFunctions::st_asgeojson(FunctionContext* context, const Columns& columns) {
+    ColumnViewer<TYPE_VARCHAR> shape_viewer(columns[0]);
+
+    auto size = columns[0]->size();
+    ColumnBuilder<TYPE_VARCHAR> result(size);
+    for (int row = 0; row < size; ++row) {
+        if (shape_viewer.is_null(row)) {
+            result.append_null();
+            continue;
+        }
+
+        auto shape_value = shape_viewer.value(row);
+        std::unique_ptr<GeoShape> shape(GeoShape::from_encoded(shape_value.data, shape_value.size));
+        if (shape == nullptr) {
+            result.append_null();
+            continue;
+        }
+
+        auto geojson = shape->as_geojson();
+        result.append(Slice(geojson.data(), geojson.size()));
+    }
+
+    return result.build(ColumnHelper::is_all_const(columns));
+}
+
 struct StContainsState {
     StContainsState() : shapes{nullptr, nullptr} {}
     ~StContainsState() {

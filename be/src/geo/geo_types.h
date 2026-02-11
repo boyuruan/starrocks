@@ -69,6 +69,7 @@ public:
     bool decode_from(const void* data, size_t size);
 
     virtual std::string as_wkt() const = 0;
+    virtual std::string as_geojson() const = 0;
 
     virtual bool contains(const GeoShape* rhs) const { return false; }
     virtual std::string to_string() const { return ""; };
@@ -92,6 +93,7 @@ public:
 
     std::string to_string() const override;
     std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
     double x() const;
     double y() const;
@@ -117,6 +119,7 @@ public:
     const S2Polyline* polyline() const { return _polyline.get(); }
 
     std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
 protected:
     void encode(std::string* buf) override;
@@ -138,6 +141,7 @@ public:
 
     bool contains(const GeoShape* rhs) const override;
     std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
 protected:
     void encode(std::string* buf) override;
@@ -158,6 +162,7 @@ public:
 
     bool contains(const GeoShape* rhs) const override;
     std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
 protected:
     void encode(std::string* buf) override;

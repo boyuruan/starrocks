@@ -59,6 +59,11 @@ void print_s2point(std::ostream& os, const S2Point& point) {
     os << std::setprecision(12) << coord.lng().degrees() << " " << coord.lat().degrees();
 }
 
+void print_s2point_geojson(std::ostream& os, const S2Point& point) {
+    S2LatLng coord(point);
+    os << std::setprecision(12) << "[" << coord.lng().degrees() << ", " << coord.lat().degrees() << "]";
+}
+
 static inline bool is_valid_lng_lat(double lng, double lat) {
     return std::abs(lng) <= 180 && std::abs(lat) <= 90;
 }
@@ -284,6 +289,14 @@ std::string GeoPoint::as_wkt() const {
     return ss.str();
 }
 
+std::string GeoPoint::as_geojson() const {
+    std::stringstream ss;
+    ss << "{\"type\": \"Point\", \"coordinates\": ";
+    print_s2point_geojson(ss, *_point);
+    ss << "}";
+    return ss.str();
+}
+
 GeoLine::GeoLine() = default;
 GeoLine::~GeoLine() = default;
 
@@ -335,6 +348,19 @@ std::string GeoLine::as_wkt() const {
     return ss.str();
 }
 
+std::string GeoLine::as_geojson() const {
+    std::stringstream ss;
+    ss << "{\"type\": \"LineString\", \"coordinates\": [";
+    for (int i = 0; i < _polyline->num_vertices(); ++i) {
+        if (i != 0) {
+            ss << ", ";
+        }
+        print_s2point_geojson(ss, _polyline->vertex(i));
+    }
+    ss << "]}";
+    return ss.str();
+}
+
 std::string GeoPolygon::as_wkt() const {
     std::stringstream ss;
     ss << "POLYGON (";
@@ -355,6 +381,30 @@ std::string GeoPolygon::as_wkt() const {
         ss << ")";
     }
     ss << ")";
+
+    return ss.str();
+}
+
+std::string GeoPolygon::as_geojson() const {
+    std::stringstream ss;
+    ss << "{\"type\": \"Polygon\", \"coordinates\": [";
+    for (int i = 0; i < _polygon->num_loops(); ++i) {
+        if (i != 0) {
+            ss << ", ";
+        }
+        ss << "[";
+        const S2Loop* loop = _polygon->loop(i);
+        for (int j = 0; j < loop->num_vertices(); ++j) {
+            if (j != 0) {
+                ss << ", ";
+            }
+            print_s2point_geojson(ss, loop->vertex(j));
+        }
+        ss << ", ";
+        print_s2point_geojson(ss, loop->vertex(0));
+        ss << "]";
+    }
+    ss << "]}";
 
     return ss.str();
 }
@@ -501,6 +551,14 @@ std::string GeoCircle::as_wkt() const {
     ss << "CIRCLE ((";
     print_s2point(ss, _cap->center());
     ss << "), " << S2Earth::ToMeters(_cap->radius()) << ")";
+    return ss.str();
+}
+
+std::string GeoCircle::as_geojson() const {
+    std::stringstream ss;
+    ss << "{\"type\": \"Point\", \"coordinates\": ";
+    print_s2point_geojson(ss, _cap->center());
+    ss << ", \"radius\": " << S2Earth::ToMeters(_cap->radius()) << "}";
     return ss.str();
 }
 
