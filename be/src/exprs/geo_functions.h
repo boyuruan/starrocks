@@ -63,6 +63,14 @@ public:
      */
     DEFINE_VECTORIZED_FN(st_as_wkt);
 
+    /**
+     * @param: [string_value]
+     * @paramType: [BinaryColumn]
+     * @return: BinaryColumn
+     * Convert the geometry to GeoJSON format.
+     */
+    DEFINE_VECTORIZED_FN(st_as_geojson);
+
     // from wkt
     static Status st_from_wkt_prepare_common(FunctionContext*, FunctionContext::FunctionStateScope,
                                              GeoShapeType shape_type);

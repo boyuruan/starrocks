@@ -284,6 +284,14 @@ std::string GeoPoint::as_wkt() const {
     return ss.str();
 }
 
+std::string GeoPoint::as_geojson() const {
+    std::stringstream ss;
+    ss << "{\"type\":\"Point\",\"coordinates\":";
+    ss << "[" << S2LatLng(*_point).lng().degrees() << "," << S2LatLng(*_point).lat().degrees() << "]";
+    ss << "}";
+    return ss.str();
+}
+
 GeoLine::GeoLine() = default;
 GeoLine::~GeoLine() = default;
 
@@ -335,6 +343,20 @@ std::string GeoLine::as_wkt() const {
     return ss.str();
 }
 
+std::string GeoLine::as_geojson() const {
+    std::stringstream ss;
+    ss << "{\"type\":\"LineString\",\"coordinates\":[";
+    for (int i = 0; i < _polyline->num_vertices(); ++i) {
+        if (i != 0) {
+            ss << ",";
+        }
+        ss << "[" << S2LatLng(_polyline->vertex(i)).lng().degrees()
+           << "," << S2LatLng(_polyline->vertex(i)).lat().degrees() << "]";
+    }
+    ss << "]}";
+    return ss.str();
+}
+
 std::string GeoPolygon::as_wkt() const {
     std::stringstream ss;
     ss << "POLYGON (";
@@ -356,6 +378,29 @@ std::string GeoPolygon::as_wkt() const {
     }
     ss << ")";
 
+    return ss.str();
+}
+
+std::string GeoPolygon::as_geojson() const {
+    std::stringstream ss;
+    ss << "{\"type\":\"Polygon\",\"coordinates\":[";
+    for (int i = 0; i < _polygon->num_loops(); ++i) {
+        if (i != 0) {
+            ss << ",";
+        }
+        ss << "[";
+        const S2Loop* loop = _polygon->loop(i);
+        for (int j = 0; j < loop->num_vertices(); ++j) {
+            if (j != 0) {
+                ss << ",";
+            }
+            ss << "[" << S2LatLng(loop->vertex(j)).lng().degrees()
+               << "," << S2LatLng(loop->vertex(j)).lat().degrees() << "]";
+        }
+        ss << "," << S2LatLng(loop->vertex(0)).lng().degrees()
+           << "," << S2LatLng(loop->vertex(0)).lat().degrees() << "]";
+    }
+    ss << "]}";
     return ss.str();
 }
 
@@ -501,6 +546,16 @@ std::string GeoCircle::as_wkt() const {
     ss << "CIRCLE ((";
     print_s2point(ss, _cap->center());
     ss << "), " << S2Earth::ToMeters(_cap->radius()) << ")";
+    return ss.str();
+}
+
+std::string GeoCircle::as_geojson() const {
+    std::stringstream ss;
+    ss << "{\"type\":\"Circle\",\"coordinates\":[";
+    ss << S2LatLng(_cap->center()).lng().degrees() << ",";
+    ss << S2LatLng(_cap->center()).lat().degrees() << "],";
+    ss << "\"radius\":" << S2Earth::ToMeters(_cap->radius());
+    ss << "}";
     return ss.str();
 }
 

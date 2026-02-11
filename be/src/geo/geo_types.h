@@ -69,6 +69,7 @@ public:
     bool decode_from(const void* data, size_t size);
 
     virtual std::string as_wkt() const = 0;
+    virtual std::string as_geojson() const = 0;
 
     virtual bool contains(const GeoShape* rhs) const { return false; }
     virtual std::string to_string() const { return ""; };
@@ -92,6 +93,7 @@ public:
 
     std::string to_string() const override;
     std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
     double x() const;
     double y() const;
@@ -117,6 +119,7 @@ public:
     const S2Polyline* polyline() const { return _polyline.get(); }
 
     std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
 protected:
     void encode(std::string* buf) override;
@@ -138,6 +141,7 @@ public:
 
     bool contains(const GeoShape* rhs) const override;
     std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
 protected:
     void encode(std::string* buf) override;
@@ -158,6 +162,7 @@ public:
 
     bool contains(const GeoShape* rhs) const override;
     std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
 protected:
     void encode(std::string* buf) override;
@@ -170,11 +175,14 @@ private:
 #if 0
 class GeoMultiPoint : public GeoShape {
 public:
-    GeoPolygon();
-    ~GeoPolygon() override;
+    GeoMultiPoint();
+    ~GeoMultiPoint() override;
 
-    GeoShapeType type() const override { return GEO_SHAPE_POLYGON; }
+    GeoShapeType type() const override { return GEO_SHAPE_MULTI_POINT; }
     const std::vector<S2Point>& points() const { return _points; }
+
+    std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
 private:
     std::vector<S2Point> _points;
@@ -188,6 +196,9 @@ public:
     GeoShapeType type() const override { return GEO_SHAPE_MULTI_LINE_STRING; }
     const std::vector<S2Polyline*>& polylines() const { return _polylines; }
 
+    std::string as_wkt() const override;
+    std::string as_geojson() const override;
+
 private:
     std::vector<S2Polyline> _polylines;
 };
@@ -200,6 +211,9 @@ public:
     GeoShapeType type() const override { return GEO_SHAPE_MULTI_POLYGON; }
 
     const std::vector<S2Polygon>& polygons() const { return _polygons; }
+
+    std::string as_wkt() const override;
+    std::string as_geojson() const override;
 
 
     bool contains(const GeoShape* rhs) override;
