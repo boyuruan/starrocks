@@ -921,6 +921,7 @@ vectorized_functions = [
      "GeoFunctions::st_circle_prepare", "GeoFunctions::st_from_wkt_close"],
     [120014, "ST_Contains", False, False, "BOOLEAN", ["VARCHAR", "VARCHAR"], "GeoFunctions::st_contains",
      "GeoFunctions::st_contains_prepare", "GeoFunctions::st_contains_close"],
+    [120015, "ST_AsGeoJSON", False, False, "VARCHAR", ["VARCHAR"], "GeoFunctions::st_asgeojson"],
 
     # percentile function
     [130000, 'percentile_hash', True, False, 'PERCENTILE', ['DOUBLE'], 'PercentileFunctions::percentile_hash'],

@@ -165,6 +165,7 @@ public class FunctionSet {
 
     // Geo functions:
     public static final String ST_ASTEXT = "st_astext";
+    public static final String ST_ASGEOJSON = "st_asgeojson";
     public static final String ST_ASWKT = "st_aswkt";
     public static final String ST_CIRCLE = "st_circle";
     public static final String ST_CONTAINS = "st_contains";
