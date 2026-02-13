@@ -1,0 +1,264 @@
+-- name: test_create_s2_index @native
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "true");
+
+-- DUPLICATE KEY table with S2 index (default s2_level)
+CREATE TABLE `t_s2_dup_default` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT "",
+    INDEX idx_location (`location`) USING S2 COMMENT 's2 index'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+show create table t_s2_dup_default;
+
+-- DUPLICATE KEY table with S2 index (custom s2_level)
+CREATE TABLE `t_s2_dup_custom` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT "",
+    INDEX idx_location (`location`) USING S2 ("s2_level"="15") COMMENT 's2 index level 15'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+show create table t_s2_dup_custom;
+
+-- PRIMARY KEY table with S2 index
+CREATE TABLE `t_s2_pk` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT "",
+    INDEX idx_location (`location`) USING S2 ("s2_level"="13") COMMENT 's2 index pk'
+) PRIMARY KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+show create table t_s2_pk;
+
+-- S2 index on VARBINARY column
+CREATE TABLE `t_s2_varbinary` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `geo_data` varbinary NOT NULL COMMENT "",
+    INDEX idx_geo (`geo_data`) USING S2 ("s2_level"="13") COMMENT 's2 index varbinary'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+show create table t_s2_varbinary;
+
+DROP TABLE t_s2_dup_default;
+DROP TABLE t_s2_dup_custom;
+DROP TABLE t_s2_pk;
+DROP TABLE t_s2_varbinary;
+
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "false");
+
+-- name: test_s2_index_invalid_column_types @native
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "true");
+
+-- S2 index should be rejected on INT column
+CREATE TABLE `t_s2_bad_int` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `value` int NOT NULL COMMENT "",
+    INDEX idx_value (`value`) USING S2 COMMENT 's2 index on int'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+-- S2 index should be rejected on DOUBLE column
+CREATE TABLE `t_s2_bad_double` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `value` double NOT NULL COMMENT "",
+    INDEX idx_value (`value`) USING S2 COMMENT 's2 index on double'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+-- S2 index should be rejected on ARRAY column
+CREATE TABLE `t_s2_bad_array` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `value` ARRAY<FLOAT> NOT NULL COMMENT "",
+    INDEX idx_value (`value`) USING S2 COMMENT 's2 index on array'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "false");
+
+-- name: test_s2_index_invalid_params @native
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "true");
+
+-- Invalid s2_level (out of range)
+CREATE TABLE `t_s2_bad_level` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT "",
+    INDEX idx_location (`location`) USING S2 ("s2_level"="31") COMMENT 's2 index bad level'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+-- Unknown property key
+CREATE TABLE `t_s2_bad_key` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT "",
+    INDEX idx_location (`location`) USING S2 ("unknown_key"="value") COMMENT 's2 index bad key'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "false");
+
+-- name: test_s2_index_feature_disabled @native
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "false");
+
+-- Creating S2 index should fail when feature is disabled
+CREATE TABLE `t_s2_disabled` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT "",
+    INDEX idx_location (`location`) USING S2 COMMENT 's2 index disabled'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+-- name: test_s2_index_add_drop @native
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "true");
+
+-- Create table without S2 index, then add one via ALTER TABLE
+CREATE TABLE `t_s2_alter` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT ""
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+show create table t_s2_alter;
+
+-- Insert data before adding index
+insert into t_s2_alter values (1, 'POINT(116.4 39.9)'), (2, 'POINT(121.5 31.2)'), (3, 'POINT(113.3 23.1)');
+
+-- Add S2 index via ALTER TABLE
+ALTER TABLE t_s2_alter ADD INDEX idx_location (location) USING S2 ("s2_level"="13") COMMENT 's2 index';
+function: wait_alter_table_finish()
+
+show create table t_s2_alter;
+
+-- Drop S2 index via ALTER TABLE
+ALTER TABLE t_s2_alter DROP INDEX idx_location;
+function: wait_alter_table_finish()
+
+show create table t_s2_alter;
+
+-- Add again via CREATE INDEX statement
+CREATE INDEX idx_location ON t_s2_alter (location) USING S2 ("s2_level"="15");
+function: wait_alter_table_finish()
+
+show create table t_s2_alter;
+
+-- Drop via DROP INDEX statement
+DROP INDEX idx_location ON t_s2_alter;
+function: wait_alter_table_finish()
+
+show create table t_s2_alter;
+
+DROP TABLE t_s2_alter;
+
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "false");
+
+-- name: test_s2_index_data_ingestion @native
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "true");
+
+-- Test that data can be inserted and queried from tables with S2 index
+CREATE TABLE `t_s2_data` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `name` varchar(100) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT "",
+    INDEX idx_location (`location`) USING S2 ("s2_level"="13") COMMENT 's2 index'
+) DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+-- Insert various WKT geometry types
+insert into t_s2_data values (1, 'Beijing', 'POINT(116.4074 39.9042)');
+insert into t_s2_data values (2, 'Shanghai', 'POINT(121.4737 31.2304)');
+insert into t_s2_data values (3, 'Guangzhou', 'POINT(113.2644 23.1291)');
+insert into t_s2_data values (4, 'Shenzhen', 'POINT(114.0579 22.5431)');
+insert into t_s2_data values (5, 'Road', 'LINESTRING(116.4 39.9, 121.5 31.2)');
+insert into t_s2_data values (6, 'Area', 'POLYGON((116.0 39.5, 117.0 39.5, 117.0 40.5, 116.0 40.5, 116.0 39.5))');
+
+-- Basic queries (should work without spatial predicates)
+select id, name from t_s2_data order by id;
+select count(*) from t_s2_data;
+
+-- Query with st_contains (spatial predicate)
+select id, name from t_s2_data where st_contains(st_geometryfromtext('POLYGON((116.0 39.5, 117.0 39.5, 117.0 40.5, 116.0 40.5, 116.0 39.5))'), st_geometryfromtext(location)) order by id;
+
+-- Query with st_distance_sphere
+select id, name from t_s2_data where st_distance_sphere(st_point(116.4, 39.9), st_point(cast(split_part(replace(replace(location, 'POINT(', ''), ')', ''), ' ', 1) as double), cast(split_part(replace(replace(location, 'POINT(', ''), ')', ''), ' ', 2) as double))) < 100000 and location like 'POINT%' order by id;
+
+DROP TABLE t_s2_data;
+
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "false");
+
+-- name: test_s2_index_primary_key @native
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "true");
+
+-- Test S2 index with PRIMARY KEY table (supports updates)
+CREATE TABLE `t_s2_pk_update` (
+    `id` bigint(20) NOT NULL COMMENT "",
+    `location` varchar(255) NOT NULL COMMENT "",
+    INDEX idx_location (`location`) USING S2 ("s2_level"="13") COMMENT 's2 index'
+) PRIMARY KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 1
+PROPERTIES (
+    "replicated_storage" = "true",
+    "replication_num" = "1"
+);
+
+insert into t_s2_pk_update values (1, 'POINT(116.4 39.9)'), (2, 'POINT(121.5 31.2)');
+select id, location from t_s2_pk_update order by id;
+
+-- Update a row
+insert into t_s2_pk_update values (1, 'POINT(113.3 23.1)');
+select id, location from t_s2_pk_update order by id;
+
+-- Verify count
+select count(*) from t_s2_pk_update;
+
+DROP TABLE t_s2_pk_update;
+
+ADMIN SET FRONTEND CONFIG ("enable_experimental_s2_index" = "false");

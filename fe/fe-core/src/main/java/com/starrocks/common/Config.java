@@ -3111,6 +3111,9 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true)
     public static boolean enable_experimental_vector = false;
 
+    @ConfField(mutable = true, comment = "Enable experimental S2 spatial index for geographic data")
+    public static boolean enable_experimental_s2_index = false;
+
     @ConfField(mutable = true)
     public static boolean enable_experimental_mv = true;
 

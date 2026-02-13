@@ -275,6 +275,9 @@ struct OlapReaderStatistics {
     int64_t vector_search_timer = 0;
     int64_t process_vector_distance_and_id_timer = 0;
 
+    int64_t rows_s2_index_filtered = 0;
+    int64_t get_row_ranges_by_s2_index_timer = 0;
+
     int64_t rows_del_vec_filtered = 0;
 
     int64_t gin_index_filter_ns = 0;

@@ -19,6 +19,7 @@ import com.starrocks.common.FeConstants;
 import com.starrocks.common.InvertedIndexParams;
 import com.starrocks.common.InvertedIndexParams.InvertedIndexImpType;
 import com.starrocks.common.NgramBfIndexParamsKey;
+import com.starrocks.common.S2IndexParams;
 import com.starrocks.common.VectorIndexParams;
 import com.starrocks.common.io.ParamsKey;
 import com.starrocks.sql.analyzer.SemanticException;
@@ -111,6 +112,11 @@ public class IndexParams {
                 String.valueOf(FeConstants.DEFAULT_BLOOM_FILTER_FPP), null);
         register(builder, IndexType.NGRAMBF, IndexParamType.INDEX, NgramBfIndexParamsKey.CASE_SENSITIVE, true, true,
                 String.valueOf(FeConstants.NGRAM_CASE_SENSITIVE), null);
+
+        /* S2 Index */
+        // common
+        register(builder, IndexType.S2, IndexParamType.COMMON, S2IndexParams.CommonIndexParamKey.S2_LEVEL, false, true,
+                "13", null);
 
         paramsHolder = builder.build();
     }

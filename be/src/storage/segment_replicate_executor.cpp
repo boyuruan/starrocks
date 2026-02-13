@@ -336,7 +336,7 @@ void ReplicateToken::_sync_segment(std::unique_ptr<SegmentPB> segment, bool eos)
             size_t total_index_data_size = 0;
             for (int i = 0; i < mutable_indexes->size(); i++) {
                 auto& index = mutable_indexes->at(i);
-                if (index.index_type() == VECTOR) {
+                if (index.index_type() == VECTOR || index.index_type() == S2) {
                     auto index_path = mutable_indexes->at(i).index_path();
                     auto res = _fs->new_random_access_file(index_path);
 

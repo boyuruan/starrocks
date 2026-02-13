@@ -443,6 +443,13 @@ Status ScalarColumnWriter::init() {
         }
     }
 #endif
+    if (_opts.need_s2_index) {
+        _has_index_builder = true;
+        auto s2_tablet_index = std::make_shared<TabletIndex>(_opts.tablet_index.at(S2));
+        _s2_index_writer = std::make_unique<S2IndexWriter>(std::move(s2_tablet_index),
+                                                           _opts.standalone_index_file_paths.at(S2));
+        RETURN_IF_ERROR(_s2_index_writer->init());
+    }
     return Status::OK();
 }
 
@@ -471,6 +478,9 @@ uint64_t ScalarColumnWriter::estimate_buffer_size() {
         size += _inverted_index_builder->size();
     }
 #endif
+    if (_s2_index_writer != nullptr) {
+        size += _s2_index_writer->size();
+    }
     return size;
 }
 
@@ -580,6 +590,13 @@ Status ScalarColumnWriter::write_inverted_index() {
         return _inverted_index_builder->finish(_wfile, _opts.meta);
     }
 #endif
+    return Status::OK();
+}
+
+Status ScalarColumnWriter::write_s2_index(uint64_t* index_size) {
+    if (_s2_index_writer != nullptr) {
+        return _s2_index_writer->finish(index_size);
+    }
     return Status::OK();
 }
 
@@ -791,6 +808,7 @@ Status ScalarColumnWriter::append(const uint8_t* data, const uint8_t* null_flags
 #ifndef __APPLE__
                     INDEX_ADD_NULLS(_inverted_index_builder, run);
 #endif
+                    INDEX_ADD_NULLS(_s2_index_writer, run);
                 } else {
                     INDEX_ADD_VALUES(_zone_map_index_builder, pdata, run);
                     INDEX_ADD_VALUES(_bitmap_index_builder, pdata, run);
@@ -798,6 +816,7 @@ Status ScalarColumnWriter::append(const uint8_t* data, const uint8_t* null_flags
 #ifndef __APPLE__
                     INDEX_ADD_VALUES(_inverted_index_builder, pdata, run);
 #endif
+                    INDEX_ADD_VALUES(_s2_index_writer, pdata, run);
                 }
                 pdata += type_info()->size() * run;
             }
@@ -808,6 +827,7 @@ Status ScalarColumnWriter::append(const uint8_t* data, const uint8_t* null_flags
 #ifndef __APPLE__
             INDEX_ADD_VALUES(_inverted_index_builder, data, num_written);
 #endif
+            INDEX_ADD_VALUES(_s2_index_writer, data, num_written);
         }
 
         _next_rowid += num_written;

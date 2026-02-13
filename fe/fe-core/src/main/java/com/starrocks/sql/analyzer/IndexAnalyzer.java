@@ -26,6 +26,7 @@ import com.starrocks.common.AnalysisException;
 import com.starrocks.common.Config;
 import com.starrocks.common.InvertedIndexParams;
 import com.starrocks.common.NgramBfIndexParamsKey;
+import com.starrocks.common.S2IndexParams;
 import com.starrocks.common.VectorIndexParams;
 import com.starrocks.common.VectorIndexParams.CommonIndexParamKey;
 import com.starrocks.common.VectorIndexParams.IndexParamsKey;
@@ -143,6 +144,8 @@ public class IndexAnalyzer {
             checkNgramBloomFilterIndexValid(column, properties, keysType);
         } else if (indexType == IndexDef.IndexType.VECTOR) {
             checkVectorIndexValid(column, properties, keysType);
+        } else if (indexType == IndexDef.IndexType.S2) {
+            checkS2IndexValid(column, properties, keysType);
         } else {
             throw new SemanticException("Unsupported index type: " + indexType);
         }
@@ -371,6 +374,53 @@ public class IndexAnalyzer {
     private static void addDefaultVectorProperties(Map<String, String> properties,
                                                    Map<String, IndexParamItem> paramsNeedDefault) {
         paramsNeedDefault.forEach((key, value) -> properties.put(key.toLowerCase(Locale.ROOT), value.getDefaultValue()));
+    }
+
+    // S2IndexUtil methods
+    public static void checkS2IndexValid(Column column, Map<String, String> properties, KeysType keysType) {
+        if (!Config.enable_experimental_s2_index) {
+            throw new SemanticException(
+                    "The S2 index is disabled, enable it by setting FE config `enable_experimental_s2_index` to true");
+        }
+
+        // S2 index can be built on DUPLICATE/PRIMARY table or key columns of UNIQUE/AGGREGATE table
+        if (keysType != KeysType.DUP_KEYS && keysType != KeysType.PRIMARY_KEYS) {
+            throw new SemanticException("The S2 index can only be built on DUPLICATE or PRIMARY table");
+        }
+
+        // S2 index is for geo data, which is stored as VARCHAR (WKT format) or VARBINARY
+        PrimitiveType primitiveType = column.getType().getPrimitiveType();
+        if (primitiveType != PrimitiveType.VARCHAR && primitiveType != PrimitiveType.VARBINARY) {
+            throw new SemanticException("The S2 index can only be built on column with type of VARCHAR or VARBINARY");
+        }
+
+        // Validate S2-specific properties if present
+        if (properties != null) {
+            // Reject unknown property keys
+            String noMatchParamKey = properties.keySet().stream()
+                    .filter(key -> !S2IndexParams.SUPPORTED_PARAM_KEYS.contains(key.toLowerCase(Locale.ROOT)))
+                    .collect(Collectors.joining(","));
+            if (StringUtils.isNotEmpty(noMatchParamKey)) {
+                throw new SemanticException(String.format("Do not support parameters %s for S2 index. ", noMatchParamKey));
+            }
+
+            for (Map.Entry<String, String> entry : properties.entrySet()) {
+                String key = entry.getKey().toLowerCase(Locale.ROOT);
+                String value = entry.getValue();
+                if (key.equals(S2IndexParams.CommonIndexParamKey.S2_LEVEL.name().toLowerCase(Locale.ROOT))) {
+                    S2IndexParams.CommonIndexParamKey.S2_LEVEL.check(value);
+                }
+            }
+        }
+
+        // Add default properties
+        addDefaultS2Properties(properties);
+    }
+
+    private static void addDefaultS2Properties(Map<String, String> properties) {
+        IndexParams.getInstance().getKeySetByIndexTypeWithDefaultValue(IndexDef.IndexType.S2).entrySet()
+                .stream().filter(entry -> !properties.containsKey(entry.getKey().toLowerCase(Locale.ROOT)))
+                .forEach(entry -> properties.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue().getDefaultValue()));
     }
 
     // BloomFilterIndexUtil methods

@@ -43,6 +43,7 @@
 #include "storage/chunk_helper.h"
 #include "storage/column_predicate_rewriter.h"
 #include "storage/index/vector/vector_search_option.h"
+#include "storage/index/s2/spatial_search_option.h"
 #include "storage/metadata_util.h"
 #include "storage/predicate_parser.h"
 #include "storage/projection_iterator.h"
@@ -93,6 +94,28 @@ Status OlapChunkSource::prepare(RuntimeState* state) {
         _vector_distance_column_name = vector_search_options.vector_distance_column_name;
         _vector_slot_id = vector_search_options.vector_slot_id;
         _params.vector_search_option = std::make_shared<VectorSearchOption>();
+    }
+    if (thrift_olap_scan_node.__isset.spatial_search_options &&
+        thrift_olap_scan_node.spatial_search_options.enable_use_s2_index) {
+        _use_s2_index = true;
+        const auto& spatial_opts = thrift_olap_scan_node.spatial_search_options;
+        _params.spatial_search_option = std::make_shared<SpatialSearchOption>();
+        _params.spatial_search_option->enable_use_s2_index = true;
+        if (spatial_opts.__isset.query_shape_wkt) {
+            _params.spatial_search_option->query_shape_wkt = spatial_opts.query_shape_wkt;
+        }
+        if (spatial_opts.__isset.spatial_predicate) {
+            _params.spatial_search_option->spatial_predicate = spatial_opts.spatial_predicate;
+        }
+        if (spatial_opts.__isset.distance_threshold) {
+            _params.spatial_search_option->distance_threshold = spatial_opts.distance_threshold;
+        }
+        if (spatial_opts.__isset.spatial_column_id) {
+            _params.spatial_search_option->spatial_column_id = spatial_opts.spatial_column_id;
+        }
+        if (spatial_opts.__isset.s2_level_override) {
+            _params.spatial_search_option->s2_level_override = spatial_opts.s2_level_override;
+        }
     }
     const TupleDescriptor* tuple_desc = state->desc_tbl().get_tuple_descriptor(thrift_olap_scan_node.tuple_id);
     _slots = &tuple_desc->slots();
@@ -195,6 +218,9 @@ void OlapChunkSource::_init_counter(RuntimeState* state) {
             ADD_CHILD_COUNTER(_runtime_profile, "ZoneMapIndexFilterRows", TUnit::UNIT, segment_init_name);
     _vector_index_filtered_counter =
             ADD_CHILD_COUNTER(_runtime_profile, "VectorIndexFilterRows", TUnit::UNIT, segment_init_name);
+    _s2_index_filtered_counter =
+            ADD_CHILD_COUNTER(_runtime_profile, "S2IndexFilterRows", TUnit::UNIT, segment_init_name);
+    _s2_index_filter_timer = ADD_CHILD_TIMER(_runtime_profile, "S2IndexFilterTime", segment_init_name);
     _sk_filtered_counter =
             ADD_CHILD_COUNTER_SKIP_MIN_MAX(_runtime_profile, "ShortKeyFilterRows", TUnit::UNIT,
                                            _get_counter_min_max_type("ShortKeyFilterRows"), segment_init_name);
@@ -272,6 +298,7 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
         _params.enable_gin_filter = thrift_olap_scan_node.enable_gin_filter;
     }
     _params.use_vector_index = _use_vector_index;
+    _params.use_s2_index = _use_s2_index;
     if (_use_vector_index) {
         const TVectorSearchOptions& vector_options = thrift_olap_scan_node.vector_search_options;
 
@@ -907,6 +934,8 @@ void OlapChunkSource::_update_counter() {
     COUNTER_UPDATE(_seg_rt_filtered_counter, _reader->stats().runtime_stats_filtered);
     COUNTER_UPDATE(_zm_filtered_counter, _reader->stats().rows_stats_filtered);
     COUNTER_UPDATE(_vector_index_filtered_counter, _reader->stats().rows_vector_index_filtered);
+    COUNTER_UPDATE(_s2_index_filtered_counter, _reader->stats().rows_s2_index_filtered);
+    COUNTER_UPDATE(_s2_index_filter_timer, _reader->stats().get_row_ranges_by_s2_index_timer);
     COUNTER_UPDATE(_bf_filtered_counter, _reader->stats().rows_bf_filtered);
     COUNTER_UPDATE(_sk_filtered_counter, _reader->stats().rows_key_range_filtered);
     COUNTER_UPDATE(_rows_after_sk_filtered_counter, _reader->stats().rows_after_key_range);

@@ -113,6 +113,8 @@ private:
     std::string _vector_distance_column_name;
     SlotId _vector_slot_id;
 
+    bool _use_s2_index = false;
+
     std::shared_ptr<starrocks::TableMetrics> _table_metrics;
 
     // The following are profile meatures
@@ -152,6 +154,10 @@ private:
 
     // Vector index filter
     RuntimeProfile::Counter* _vector_index_filtered_counter = nullptr;
+
+    // S2 spatial index filter
+    RuntimeProfile::Counter* _s2_index_filtered_counter = nullptr;
+    RuntimeProfile::Counter* _s2_index_filter_timer = nullptr;
 
     // Segment rowid filter
     RuntimeProfile::Counter* _seg_rt_filtered_counter = nullptr;

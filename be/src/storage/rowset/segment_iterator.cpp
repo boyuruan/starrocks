@@ -19,6 +19,13 @@
 #include <unordered_map>
 #include <utility>
 
+#include <s2/s2cell_id.h>
+#include <s2/s2latlng.h>
+#include <s2/s2point_region.h>
+#include <s2/s2polygon.h>
+#include <s2/s2polyline.h>
+#include <s2/s2region_coverer.h>
+
 #include "base/simd/simd.h"
 #include "column/chunk.h"
 #include "column/column_helper.h"
@@ -26,6 +33,7 @@
 #include "common/config.h"
 #include "common/status.h"
 #include "fs/fs.h"
+#include "geo/geo_types.h"
 #include "glog/logging.h"
 #include "gutil/casts.h"
 #include "gutil/stl_util.h"
@@ -43,6 +51,8 @@
 #include "storage/index/vector/vector_index_reader.h"
 #include "storage/index/vector/vector_index_reader_factory.h"
 #include "storage/index/vector/vector_search_option.h"
+#include "storage/index/s2/s2_index_reader.h"
+#include "storage/index/s2/spatial_search_option.h"
 #include "storage/lake/update_manager.h"
 #include "storage/projection_iterator.h"
 #include "storage/range.h"
@@ -307,6 +317,15 @@ private:
         }
     };
 
+    // S2 spatial index context, only created when needed
+    struct S2IndexContext {
+        S2IndexContext() = default;
+        ~S2IndexContext() = default;
+
+        bool use_s2_index = false;
+        std::shared_ptr<S2IndexReader> s2_reader;
+    };
+
     Status _init();
     Status _try_to_update_ranges_by_runtime_filter();
     Status _do_get_next(Chunk* result, vector<rowid_t>* rowid);
@@ -318,6 +337,8 @@ private:
     StatusOr<SparseRange<>> _get_row_ranges_by_short_key_ranges();
     Status _get_row_ranges_by_zone_map();
     Status _get_row_ranges_by_vector_index();
+    Status _init_s2_reader();
+    Status _get_row_ranges_by_s2_index();
     Status _get_row_ranges_by_bloom_filter();
     Status _get_row_ranges_by_rowid_range();
     Status _get_row_ranges_by_row_ids(std::vector<int64_t>* result_ids, SparseRange<>* r);
@@ -521,6 +542,9 @@ private:
 
     // Vector index context - only created when needed
     std::unique_ptr<VectorIndexContext> _vector_index_ctx;
+
+    // S2 spatial index context - only created when needed
+    std::unique_ptr<S2IndexContext> _s2_index_ctx;
 
     // Inverted index context - only created when needed
     std::unique_ptr<InvertedIndexContext> _inverted_index_ctx;
@@ -783,6 +807,12 @@ SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment, Schema schema
                 .elem_type = tenann::PrimitiveType::kFloatType};
 #endif
     }
+    // Initialize S2 index context only when needed
+    if (_opts.use_s2_index && _opts.spatial_search_option != nullptr &&
+        _opts.spatial_search_option->enable_use_s2_index) {
+        _s2_index_ctx = std::make_unique<S2IndexContext>();
+        _s2_index_ctx->use_s2_index = true;
+    }
     // For small segment file (the number of rows is less than chunk_size),
     // the segment iterator will reserve a large amount of memory,
     // especially when there are many columns, many small files, many versions,
@@ -864,6 +894,7 @@ Status SegmentIterator::_init() {
     RETURN_IF_ERROR(_check_low_cardinality_optimization());
     RETURN_IF_ERROR(_init_column_iterators<true>(_schema));
     RETURN_IF_ERROR(_init_ann_reader());
+    RETURN_IF_ERROR(_init_s2_reader());
     // filter by index stage
     // Use indexes and predicates to filter some data page
     RETURN_IF_ERROR(_get_row_ranges_by_rowid_range());
@@ -881,6 +912,7 @@ Status SegmentIterator::_init() {
     if (apply_del_vec_after_all_index_filter) {
         RETURN_IF_ERROR(_apply_del_vector());
     }
+    RETURN_IF_ERROR(_get_row_ranges_by_s2_index());
     RETURN_IF_ERROR(_get_row_ranges_by_vector_index());
     RETURN_IF_ERROR(_apply_data_sampling());
 
@@ -1030,6 +1062,153 @@ Status SegmentIterator::_get_row_ranges_by_vector_index() {
 #else
     return Status::OK();
 #endif
+}
+
+Status SegmentIterator::_init_s2_reader() {
+    if (!_s2_index_ctx || !_s2_index_ctx->use_s2_index) {
+        return Status::OK();
+    }
+
+    // Find S2 index in the tablet schema
+    std::shared_ptr<TabletIndex> s2_index;
+    for (const auto& index : *_segment->tablet_schema().indexes()) {
+        if (index.index_type() == S2) {
+            // If spatial_column_id is specified, match against it
+            if (_opts.spatial_search_option->spatial_column_id >= 0) {
+                const auto& col_uids = index.col_unique_ids();
+                if (!col_uids.empty() && col_uids[0] == _opts.spatial_search_option->spatial_column_id) {
+                    s2_index = std::make_shared<TabletIndex>(index);
+                    break;
+                }
+            } else {
+                // Take the first S2 index found
+                s2_index = std::make_shared<TabletIndex>(index);
+                break;
+            }
+        }
+    }
+
+    if (!s2_index) {
+        _s2_index_ctx->use_s2_index = false;
+        return Status::OK();
+    }
+
+    std::string index_path = IndexDescriptor::s2_index_file_path(
+            _opts.rowset_path, _opts.rowsetid.to_string(), segment_id(), s2_index->index_id());
+
+    _s2_index_ctx->s2_reader = std::make_shared<S2IndexReader>();
+    auto st = _s2_index_ctx->s2_reader->open(index_path);
+    if (!st.ok()) {
+        // If the .s2i file doesn't exist (e.g., segment was written before index was added),
+        // gracefully skip S2 filtering rather than failing the query.
+        LOG(WARNING) << "Failed to open S2 index file " << index_path << ": " << st.to_string();
+        _s2_index_ctx->use_s2_index = false;
+        _s2_index_ctx->s2_reader.reset();
+        return Status::OK();
+    }
+
+    return Status::OK();
+}
+
+Status SegmentIterator::_get_row_ranges_by_s2_index() {
+    if (!_s2_index_ctx || !_s2_index_ctx->use_s2_index || !_s2_index_ctx->s2_reader) {
+        return Status::OK();
+    }
+    RETURN_IF(_scan_range.empty(), Status::OK());
+
+    SCOPED_RAW_TIMER(&_opts.stats->get_row_ranges_by_s2_index_timer);
+
+    // Parse the query shape WKT into a GeoShape
+    const std::string& query_wkt = _opts.spatial_search_option->query_shape_wkt;
+    if (query_wkt.empty()) {
+        return Status::OK();
+    }
+
+    std::unique_ptr<GeoShape> query_shape(GeoShape::from_wkt(query_wkt.data(), query_wkt.size(), nullptr));
+    if (!query_shape) {
+        LOG(WARNING) << "S2 index: failed to parse query shape WKT: " << query_wkt;
+        return Status::OK();
+    }
+
+    // Determine S2 level: use override if specified, otherwise use the index's level
+    int s2_level = _s2_index_ctx->s2_reader->s2_level();
+    if (_opts.spatial_search_option->s2_level_override >= 0) {
+        s2_level = _opts.spatial_search_option->s2_level_override;
+    }
+
+    // Compute cell covering for the query shape
+    std::vector<uint64_t> query_cell_ids;
+
+    auto shape_type = query_shape->type();
+    if (shape_type == GEO_SHAPE_POINT) {
+        auto* point = static_cast<GeoPoint*>(query_shape.get());
+        S2LatLng ll = S2LatLng::FromDegrees(point->y(), point->x());
+        S2CellId cell_id(ll.ToPoint());
+        query_cell_ids.push_back(cell_id.parent(s2_level).id());
+    } else {
+        // For lines, polygons, and other shapes, use S2RegionCoverer
+        S2RegionCoverer::Options options;
+        options.set_fixed_level(s2_level);
+        S2RegionCoverer coverer(options);
+
+        std::vector<S2CellId> covering;
+        if (shape_type == GEO_SHAPE_LINE_STRING) {
+            auto* line = static_cast<GeoLine*>(query_shape.get());
+            const S2Polyline* polyline = line->polyline();
+            if (polyline != nullptr) {
+                coverer.GetCovering(*polyline, &covering);
+            }
+        } else if (shape_type == GEO_SHAPE_POLYGON) {
+            auto* polygon = static_cast<GeoPolygon*>(query_shape.get());
+            const S2Polygon* s2poly = polygon->polygon();
+            if (s2poly != nullptr) {
+                coverer.GetCovering(*s2poly, &covering);
+            }
+        }
+
+        query_cell_ids.reserve(covering.size());
+        for (const auto& cell : covering) {
+            query_cell_ids.push_back(cell.id());
+        }
+    }
+
+    if (query_cell_ids.empty()) {
+        return Status::OK();
+    }
+
+    // Query the S2 index for candidate row IDs
+    std::vector<uint32_t> candidate_row_ids;
+    RETURN_IF_ERROR(_s2_index_ctx->s2_reader->query_cells(query_cell_ids, &candidate_row_ids));
+
+    if (candidate_row_ids.empty()) {
+        // No rows match the spatial query — set scan range to empty
+        size_t prev_size = _scan_range.span_size();
+        _scan_range.clear();
+        _opts.stats->rows_s2_index_filtered += prev_size;
+        return Status::OK();
+    }
+
+    // Build a SparseRange from the sorted candidate row IDs
+    SparseRange<> candidate_range;
+    uint32_t range_start = candidate_row_ids[0];
+    uint32_t range_end = range_start + 1;
+    for (size_t i = 1; i < candidate_row_ids.size(); i++) {
+        if (candidate_row_ids[i] == range_end) {
+            range_end++;
+        } else {
+            candidate_range.add(Range<>(range_start, range_end));
+            range_start = candidate_row_ids[i];
+            range_end = range_start + 1;
+        }
+    }
+    candidate_range.add(Range<>(range_start, range_end));
+
+    // Intersect with current scan range
+    size_t prev_size = _scan_range.span_size();
+    _scan_range = _scan_range.intersection(candidate_range);
+    _opts.stats->rows_s2_index_filtered += (prev_size - _scan_range.span_size());
+
+    return Status::OK();
 }
 
 Status SegmentIterator::_get_row_ranges_by_row_ids(std::vector<int64_t>* result_ids, SparseRange<>* r) {

@@ -590,6 +590,21 @@ struct TColumnAccessPath {
     6: optional bool extended
 }
 
+struct TSpatialSearchOptions {
+  // Whether to use the S2 index for spatial filtering
+  1: optional bool enable_use_s2_index;
+  // WKT representation of the query shape (e.g., "POINT(1 2)" or "POLYGON(...)")
+  2: optional string query_shape_wkt;
+  // Spatial predicate type: "st_contains", "st_intersects", "st_within", etc.
+  3: optional string spatial_predicate;
+  // Optional distance threshold for proximity queries (meters)
+  4: optional double distance_threshold;
+  // Column unique ID of the spatial column
+  5: optional i32 spatial_column_id;
+  // Override for S2 level (if different from index default)
+  6: optional i32 s2_level_override;
+}
+
 struct TVectorSearchOptions {
   1: optional bool enable_use_ann;
   2: optional i64 vector_limit_k;
@@ -650,6 +665,7 @@ struct TOlapScanNode {
 
   40: optional TVectorSearchOptions vector_search_options
   41: optional TTableSampleOptions sample_options;
+  42: optional TSpatialSearchOptions spatial_search_options;
 
   //back pressure
   50: optional bool enable_topn_filter_back_pressure
@@ -708,6 +724,9 @@ struct TLakeScanNode {
   45: optional bool enable_gin_filter
 
   46: optional i32 next_uniq_id
+
+  // spatial index
+  47: optional TSpatialSearchOptions spatial_search_options;
 }
 
 struct TEqJoinCondition {

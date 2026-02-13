@@ -744,6 +744,10 @@ Status SchemaChangeUtils::parse_request_normal(const TabletSchemaCSPtr& base_sch
                        base_schema->has_index(ref_column.unique_id(), VECTOR)) {
                 *sc_directly = true;
                 return Status::OK();
+            } else if (new_schema->has_index(new_column.unique_id(), S2) !=
+                       base_schema->has_index(ref_column.unique_id(), S2)) {
+                *sc_directly = true;
+                return Status::OK();
             }
         }
     }

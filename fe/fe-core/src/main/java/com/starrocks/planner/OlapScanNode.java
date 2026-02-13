@@ -70,6 +70,7 @@ import com.starrocks.common.ErrorReportException;
 import com.starrocks.common.FeConstants;
 import com.starrocks.common.Pair;
 import com.starrocks.common.StarRocksException;
+import com.starrocks.common.SpatialSearchOptions;
 import com.starrocks.common.VectorSearchOptions;
 import com.starrocks.connector.BucketProperty;
 import com.starrocks.lake.LakeTablet;
@@ -200,6 +201,8 @@ public class OlapScanNode extends AbstractOlapTableScanNode {
 
     private VectorSearchOptions vectorSearchOptions = new VectorSearchOptions();
 
+    private SpatialSearchOptions spatialSearchOptions = new SpatialSearchOptions();
+
 
     // Set to true after it's confirmed at some point during the execution of this request that there is some living CN.
     // Set just once per query.
@@ -226,6 +229,10 @@ public class OlapScanNode extends AbstractOlapTableScanNode {
 
     public void setVectorSearchOptions(VectorSearchOptions vectorSearchOptions) {
         this.vectorSearchOptions = vectorSearchOptions;
+    }
+
+    public void setSpatialSearchOptions(SpatialSearchOptions spatialSearchOptions) {
+        this.spatialSearchOptions = spatialSearchOptions;
     }
 
     public void setIsPreAggregation(boolean isPreAggregation, String reason) {
@@ -855,6 +862,14 @@ public class OlapScanNode extends AbstractOlapTableScanNode {
             }
         }
 
+        if (Config.enable_experimental_s2_index) {
+            if (spatialSearchOptions != null && spatialSearchOptions.isEnableUseS2Index()) {
+                output.append(spatialSearchOptions.getExplainString(prefix));
+            } else {
+                output.append(prefix).append("S2INDEX: OFF").append("\n");
+            }
+        }
+
         if (!getHeavyExprs().isEmpty()) {
             output.append(prefix).append("heavy exprs: ").append("\n");
             List<Pair<SlotId, Expr>> outputColumns = new ArrayList<>();
@@ -1176,6 +1191,10 @@ public class OlapScanNode extends AbstractOlapTableScanNode {
 
             if (vectorSearchOptions != null && vectorSearchOptions.isEnableUseANN()) {
                 msg.olap_scan_node.setVector_search_options(vectorSearchOptions.toThrift());
+            }
+
+            if (spatialSearchOptions != null && spatialSearchOptions.isEnableUseS2Index()) {
+                msg.olap_scan_node.setSpatial_search_options(spatialSearchOptions.toThrift());
             }
 
             msg.olap_scan_node.setUse_pk_index(usePkIndex);

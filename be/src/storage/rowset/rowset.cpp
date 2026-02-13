@@ -373,6 +373,12 @@ Status Rowset::remove() {
                 auto vst = fs->delete_file(vector_index_path);
                 LOG_IF(WARNING, !vst.ok()) << "Fail to delete vector_index_path " << vector_index_path << ": " << vst;
                 merge_status(vst);
+            } else if (index.index_type() == IndexType::S2) {
+                std::string s2_index_path = IndexDescriptor::s2_index_file_path(
+                        _rowset_path, rowset_id().to_string(), i, index.index_id());
+                auto s2st = fs->delete_file(s2_index_path);
+                LOG_IF(WARNING, !s2st.ok()) << "Fail to delete s2_index_path " << s2_index_path << ": " << s2st;
+                merge_status(s2st);
             }
         }
     }
@@ -483,6 +489,15 @@ Status Rowset::link_files_to(const std::string& dir, RowsetId new_rowset_id, int
                     if (link(src_index_file_path.c_str(), dst_index_link_path.c_str()) != 0) {
                         PLOG(WARNING) << "Fail to link " << src_index_file_path << " to " << dst_index_link_path;
                         return Status::RuntimeError("Fail to link index data file");
+                    }
+                } else if (index.index_type() == S2) {
+                    std::string dst_index_link_path = IndexDescriptor::s2_index_file_path(
+                            dir, new_rowset_id.to_string(), segment_n, index.index_id());
+                    std::string src_index_file_path = IndexDescriptor::s2_index_file_path(
+                            _rowset_path, rowset_id().to_string(), segment_n, index.index_id());
+                    if (link(src_index_file_path.c_str(), dst_index_link_path.c_str()) != 0) {
+                        PLOG(WARNING) << "Fail to link " << src_index_file_path << " to " << dst_index_link_path;
+                        return Status::RuntimeError("Fail to link S2 index data file");
                     }
                 }
             }
@@ -601,6 +616,26 @@ StatusOr<int64_t> Rowset::copy_files_to(const std::string& dir) {
                         } else {
                             ncopy += copy_st.value();
                         }
+                    }
+                } else if (index.index_type() == IndexType::S2) {
+                    std::string src_index_path = IndexDescriptor::s2_index_file_path(
+                            _rowset_path, rowset_id().to_string(), i, index.index_id());
+                    std::string dst_index_path =
+                            IndexDescriptor::s2_index_file_path(dir, rowset_id().to_string(), i, index.index_id());
+                    if (fs::path_exist(dst_index_path)) {
+                        LOG(WARNING) << "S2 index path already exist: " << dst_index_path;
+                        return Status::AlreadyExist(
+                                fmt::format("S2 index path already exist: {}", dst_index_path));
+                    }
+                    copy_st = fs::copy_file(src_index_path, dst_index_path);
+                    if (!copy_st.ok()) {
+                        LOG(WARNING) << "Error to copy S2 index. src:" << src_index_path
+                                     << ", dst:" << dst_index_path << ", errno=" << std::strerror(Errno::no());
+                        return Status::IOError(
+                                fmt::format("Error to copy file. src: {}, dst: {}, error:{} ", src_index_path,
+                                            dst_index_path, std::strerror(Errno::no())));
+                    } else {
+                        ncopy += copy_st.value();
                     }
                 }
             }

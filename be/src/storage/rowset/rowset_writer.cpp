@@ -549,6 +549,12 @@ HorizontalRowsetWriter::~HorizontalRowsetWriter() {
                             auto index_st = _fs->delete_dir_recursive(index_path);
                             LOG_IF(WARNING, !(index_st.ok() || index_st.is_not_found()))
                                     << "Fail to delete file=" << index_path << ", " << index_st.to_string();
+                        } else if (index.index_type() == S2) {
+                            std::string index_path = IndexDescriptor::s2_index_file_path(
+                                    _context.rowset_path_prefix, _context.rowset_id.to_string(), i, index.index_id());
+                            auto index_st = _fs->delete_file(index_path);
+                            LOG_IF(WARNING, !(index_st.ok() || index_st.is_not_found()))
+                                    << "Fail to delete file=" << index_path << ", " << index_st.to_string();
                         }
                     }
                 }
@@ -1185,13 +1191,18 @@ Status HorizontalRowsetWriter::_flush_segment_writer(std::unique_ptr<SegmentWrit
         if (_context.tablet_schema && !_context.tablet_schema->indexes()->empty()) {
             auto mutable_indexes = seg_info->mutable_seg_indexes();
             for (const auto& index : *(_context.tablet_schema->indexes())) {
-                if (index.index_type() == VECTOR) {
+                if (index.index_type() == VECTOR || index.index_type() == S2) {
                     SegmentIndexPB seg_index_pb;
                     seg_index_pb.set_index_id(index.index_id());
-                    auto index_path = IndexDescriptor::vector_index_file_path(
-                            _writer_options.segment_file_mark.rowset_path_prefix,
-                            _writer_options.segment_file_mark.rowset_id, (*segment_writer)->segment_id(),
-                            index.index_id());
+                    auto index_path = index.index_type() == VECTOR
+                                              ? IndexDescriptor::vector_index_file_path(
+                                                        _writer_options.segment_file_mark.rowset_path_prefix,
+                                                        _writer_options.segment_file_mark.rowset_id,
+                                                        (*segment_writer)->segment_id(), index.index_id())
+                                              : IndexDescriptor::s2_index_file_path(
+                                                        _writer_options.segment_file_mark.rowset_path_prefix,
+                                                        _writer_options.segment_file_mark.rowset_id,
+                                                        (*segment_writer)->segment_id(), index.index_id());
                     seg_index_pb.set_index_path(index_path);
                     seg_index_pb.set_index_type(index.index_type());
                     mutable_indexes->Add(std::move(seg_index_pb));
@@ -1239,6 +1250,12 @@ VerticalRowsetWriter::~VerticalRowsetWriter() {
                             std::string index_path = IndexDescriptor::inverted_index_file_path(
                                     _context.rowset_path_prefix, _context.rowset_id.to_string(), i, index.index_id());
                             auto index_st = _fs->delete_dir_recursive(index_path);
+                            LOG_IF(WARNING, !(index_st.ok() || index_st.is_not_found()))
+                                    << "Fail to delete file=" << index_path << ", " << index_st.to_string();
+                        } else if (index.index_type() == S2) {
+                            std::string index_path = IndexDescriptor::s2_index_file_path(
+                                    _context.rowset_path_prefix, _context.rowset_id.to_string(), i, index.index_id());
+                            auto index_st = _fs->delete_file(index_path);
                             LOG_IF(WARNING, !(index_st.ok() || index_st.is_not_found()))
                                     << "Fail to delete file=" << index_path << ", " << index_st.to_string();
                         }
