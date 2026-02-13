@@ -18,8 +18,8 @@
 #include <string>
 #include <vector>
 
-#include "benchgen/generator_options.h"
-#include "benchgen/record_batch_iterator.h"
+#include "benchgen/benchmark_suite.h"
+#include "benchgen/record_batch_iterator_factory.h"
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"
 #include "common/status.h"
